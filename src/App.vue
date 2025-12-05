@@ -63,7 +63,6 @@ function saveTodos(data) {
 const presetNames = {
   today: "今天",
   import: "重要",
-  tasks: "任务",
 };
 
 const currentListName = computed(() => {
@@ -90,25 +89,8 @@ const filteredTasks = computed(() => {
 
 const currentListTask = computed(() => {
   const list = todoData.value.find((l) => l.id === selectedListId.value);
-  console.log(list);
   return list ? list.tasks : [];
 });
-
-const allTasks = computed(() =>
-  todoData.value.flatMap((list) =>
-    list.tasks.map((task) => ({ ...task, listId: list.id }))
-  )
-);
-
-const isToday = (dateStr) => {
-  const today = new Date();
-  const target = new Date(dateStr);
-  return (
-    today.getFullYear() === target.getFullYear() &&
-    today.getMonth() === target.getMonth() &&
-    today.getDate() === target.getDate()
-  );
-};
 const selectList = (listId) => {
   selectedListId.value = listId;
 };
@@ -488,49 +470,6 @@ function resetTodayIfNeeded() {
               <span :class="{ done: t.done }">{{ t.text }}</span>
               <span class="list-tag">{{ t.listTitle }}</span>
             </div>
-            <span
-              class="isimport"
-              v-show="!t.isImportant"
-              @click="t.isImportant = !t.isImportant"
-            >
-              <svg
-                t="1764769692696"
-                class="icon"
-                viewBox="0 0 1024 1024"
-                version="1.1"
-                xmlns="http://www.w3.org/2000/svg"
-                p-id="4841"
-                width="20"
-                height="20"
-              >
-                <path
-                  d="M908.1 353.1l-253.9-36.9L540.7 86.1c-3.1-6.3-8.2-11.4-14.5-14.5-15.8-7.8-35-1.3-42.9 14.5L369.8 316.2l-253.9 36.9c-7 1-13.4 4.3-18.3 9.3-12.3 12.7-12.1 32.9 0.6 45.3l183.7 179.1-43.4 252.9c-1.2 6.9-0.1 14.1 3.2 20.3 8.2 15.6 27.6 21.7 43.2 13.4L512 754l227.1 119.4c6.2 3.3 13.4 4.4 20.3 3.2 17.4-3 29.1-19.5 26.1-36.9l-43.4-252.9 183.7-179.1c5-4.9 8.3-11.3 9.3-18.3 2.7-17.5-9.5-33.7-27-36.3zM664.8 561.6l36.1 210.3L512 672.7 323.1 772l36.1-210.3-152.8-149L417.6 382 512 190.7 606.4 382l211.2 30.7-152.8 148.9z"
-                  p-id="4842"
-                ></path>
-              </svg>
-            </span>
-            <span
-              class="isimport"
-              v-show="t.isImportant"
-              @click="t.isImportant = !t.isImportant"
-            >
-              <svg
-                t="1764769826201"
-                class="icon"
-                viewBox="0 0 1024 1024"
-                version="1.1"
-                xmlns="http://www.w3.org/2000/svg"
-                p-id="5090"
-                width="20"
-                height="20"
-              >
-                <path
-                  d="M949.12 386.592c-4.864-15.008-17.856-25.952-33.44-28.192l-256.992-37.344-114.944-232.896c-6.976-14.144-21.376-23.104-37.152-23.104-15.776 0-30.176 8.96-37.152 23.104l-114.944 232.896L97.472 358.4c-15.616 2.272-28.576 13.184-33.44 28.192s-0.8 31.456 10.496 42.464l185.984 181.28-43.904 255.968c-2.656 15.552 3.712 31.264 16.48 40.544 12.768 9.28 29.664 10.496 43.648 3.136l229.888-120.864 229.856 120.864c6.048 3.168 12.672 4.768 19.264 4.768 8.576 0 17.152-2.656 24.352-7.904 12.768-9.28 19.136-24.992 16.48-40.544l-43.904-255.968 185.984-181.28C949.92 418.048 953.984 401.6 949.12 386.592z"
-                  fill="#1296db"
-                  p-id="5091"
-                ></path>
-              </svg>
-            </span>
             <span class="delect" @click="deleteTask(t)">
               <svg
                 t="1764770107982"
@@ -569,49 +508,6 @@ function resetTodayIfNeeded() {
               @blur="saveEdit(task)"
               @keydown.esc="cancelEdit"
             />
-            <span
-              class="isimport"
-              v-show="!task.isImportant"
-              @click="task.isImportant = !task.isImportant"
-            >
-              <svg
-                t="1764769692696"
-                class="icon"
-                viewBox="0 0 1024 1024"
-                version="1.1"
-                xmlns="http://www.w3.org/2000/svg"
-                p-id="4841"
-                width="20"
-                height="20"
-              >
-                <path
-                  d="M908.1 353.1l-253.9-36.9L540.7 86.1c-3.1-6.3-8.2-11.4-14.5-14.5-15.8-7.8-35-1.3-42.9 14.5L369.8 316.2l-253.9 36.9c-7 1-13.4 4.3-18.3 9.3-12.3 12.7-12.1 32.9 0.6 45.3l183.7 179.1-43.4 252.9c-1.2 6.9-0.1 14.1 3.2 20.3 8.2 15.6 27.6 21.7 43.2 13.4L512 754l227.1 119.4c6.2 3.3 13.4 4.4 20.3 3.2 17.4-3 29.1-19.5 26.1-36.9l-43.4-252.9 183.7-179.1c5-4.9 8.3-11.3 9.3-18.3 2.7-17.5-9.5-33.7-27-36.3zM664.8 561.6l36.1 210.3L512 672.7 323.1 772l36.1-210.3-152.8-149L417.6 382 512 190.7 606.4 382l211.2 30.7-152.8 148.9z"
-                  p-id="4842"
-                ></path>
-              </svg>
-            </span>
-            <span
-              class="isimport"
-              v-show="task.isImportant"
-              @click="task.isImportant = !task.isImportant"
-            >
-              <svg
-                t="1764769826201"
-                class="icon"
-                viewBox="0 0 1024 1024"
-                version="1.1"
-                xmlns="http://www.w3.org/2000/svg"
-                p-id="5090"
-                width="20"
-                height="20"
-              >
-                <path
-                  d="M949.12 386.592c-4.864-15.008-17.856-25.952-33.44-28.192l-256.992-37.344-114.944-232.896c-6.976-14.144-21.376-23.104-37.152-23.104-15.776 0-30.176 8.96-37.152 23.104l-114.944 232.896L97.472 358.4c-15.616 2.272-28.576 13.184-33.44 28.192s-0.8 31.456 10.496 42.464l185.984 181.28-43.904 255.968c-2.656 15.552 3.712 31.264 16.48 40.544 12.768 9.28 29.664 10.496 43.648 3.136l229.888-120.864 229.856 120.864c6.048 3.168 12.672 4.768 19.264 4.768 8.576 0 17.152-2.656 24.352-7.904 12.768-9.28 19.136-24.992 16.48-40.544l-43.904-255.968 185.984-181.28C949.92 418.048 953.984 401.6 949.12 386.592z"
-                  fill="#1296db"
-                  p-id="5091"
-                ></path>
-              </svg>
-            </span>
             <span class="delect" @click="deleteTask(task)">
               <svg
                 t="1764770107982"
@@ -802,7 +698,7 @@ function resetTodayIfNeeded() {
   gap: 10px;
   width: 100%;
   padding: 20px;
-  padding-top: 15px;
+  padding-top: 25px;
   font-size: 20px;
   align-items: center;
 }
@@ -967,7 +863,7 @@ function resetTodayIfNeeded() {
   font-size: 16px;
 }
 
-@media (max-width: 432px) {
+@media (max-width: 435px) {
   .todolist {
     position: relative;
   }
@@ -978,6 +874,7 @@ function resetTodayIfNeeded() {
     top: 0;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
     width: 220px;
+    min-width: 220px;
   }
 
   .Left-open {

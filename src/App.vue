@@ -1,42 +1,31 @@
 <script setup>
-import { onMounted, ref, computed, watch, nextTick } from "vue";
+import { onMounted, ref, computed, watch } from "vue";
+import Sidebar from "./components/Sidebar.vue";
+import TaskList from "./components/TaskList.vue";
 
-const newTask = ref();
-const newListTitle = ref();
+// 常量
+const KEY = "todoData";
+const LAST_VISIT_KEY = "lastVisitDate";
+const PRESET_NAMES = {
+  today: "今天",
+  import: "重要",
+};
+
+// UI 状态
 const showLeft = ref(true);
 const selectedListId = ref("today");
-const KEY = "todoData";
 const filterKey = ref("all");
-const editingId = ref(null);
-const editText = ref("");
 const keyword = ref("");
-const ctxMenuShow = ref(false); // 菜单显示开关
-const ctxMenuList = ref(null); // 当前右键的列表对象
-const ctxX = ref(0); // 菜单定位
-const ctxY = ref(0);
-const renameId = ref(null);
-const renameText = ref("");
+const sortKey = ref("default"); // default, priority, date
 
-let todoData = ref([
+// 数据
+const todoData = ref([
   { id: "today", title: "今天", tasks: [] },
   { id: "import", title: "重要", tasks: [] },
   { id: "tasks", title: "任务", tasks: [] },
-  {
-    id: "list_1",
-    title: "新建列表",
-    tasks: [
-      {
-        id: "task_1",
-        text: "任务1",
-        done: false,
-        isImportant: false,
-        dueDate: null,
-        listId: "list_1",
-      },
-    ],
-  },
 ]);
 
+// 生命周期
 onMounted(() => {
   const local = loadTodos();
   if (local && Array.isArray(local)) {
@@ -47,6 +36,7 @@ onMounted(() => {
 
 watch(todoData, () => saveTodos(todoData.value), { deep: true });
 
+// 存储函数
 function loadTodos() {
   try {
     const raw = localStorage.getItem(KEY);
@@ -60,74 +50,153 @@ function saveTodos(data) {
   localStorage.setItem(KEY, JSON.stringify(data));
 }
 
-const presetNames = {
-  today: "今天",
-  import: "重要",
-};
+// 计算属性
+const currentList = computed(() =>
+  todoData.value.find((l) => l.id === selectedListId.value)
+);
 
-const currentListName = computed(() => {
-  if (presetNames[selectedListId.value]) {
-    return presetNames[selectedListId.value];
+const currentListName = computed(() =>
+  PRESET_NAMES[selectedListId.value] || currentList.value?.title || "未选择列表"
+);
+
+const currentListTask = computed(() => {
+  if (selectedListId.value === "today") {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const tasks = [];
+    todoData.value.forEach((list) => {
+      list.tasks.forEach((task) => {
+        if (task.dueDate === todayStr) tasks.push(task);
+      });
+    });
+    return tasks;
   }
-
-  const list = todoData.value.find((l) => l.id === selectedListId.value);
-  return list?.title || "未选择列表";
+  if (selectedListId.value === "import") {
+    const tasks = [];
+    todoData.value.forEach((list) => {
+      list.tasks.forEach((task) => {
+        if (task.isImportant) tasks.push(task);
+      });
+    });
+    return tasks;
+  }
+  return currentList.value?.tasks || [];
 });
 
-const getCount = (id) => {
-  const list = todoData.value.find((item) => item.id === id);
-  const count = list.tasks.filter((e) => !e.done);
-  return count.length ? count.length : "";
-};
-
 const filteredTasks = computed(() => {
-  const base = currentListTask.value;
-  if (filterKey.value === "undone") return base.filter((t) => !t.done);
-  if (filterKey.value === "done") return base.filter((t) => t.done);
+  let base = [...currentListTask.value];
+  
+  // 筛选
+  if (filterKey.value === "undone") base = base.filter((t) => !t.done);
+  if (filterKey.value === "done") base = base.filter((t) => t.done);
+  
+  // 排序
+  if (sortKey.value === "priority") {
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    base.sort((a, b) => {
+      const pa = a.priority ? priorityOrder[a.priority] : 3;
+      const pb = b.priority ? priorityOrder[b.priority] : 3;
+      return pa - pb;
+    });
+  } else if (sortKey.value === "date") {
+    base.sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return new Date(a.dueDate) - new Date(b.dueDate);
+    });
+  }
+  
   return base;
 });
 
-const currentListTask = computed(() => {
-  const list = todoData.value.find((l) => l.id === selectedListId.value);
-  return list ? list.tasks : [];
+const customLists = computed(() =>
+  todoData.value.filter((l) => !["today", "import", "tasks"].includes(l.id))
+);
+
+const searchResults = computed(() => {
+  if (!keyword.value.trim()) return [];
+  const kw = keyword.value.trim().toLowerCase();
+  const results = [];
+  todoData.value.forEach((list) => {
+    list.tasks.forEach((task) => {
+      if (task.text.toLowerCase().includes(kw)) {
+        results.push({ ...task, listTitle: list.title });
+      }
+    });
+  });
+  return results;
 });
+
+// 辅助函数
+const getCount = (id) => {
+  if (id === "today") {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let count = 0;
+    todoData.value.forEach((list) => {
+      list.tasks.forEach((task) => {
+        if (task.dueDate === todayStr && !task.done) count++;
+      });
+    });
+    return count || "";
+  }
+  if (id === "import") {
+    let count = 0;
+    todoData.value.forEach((list) => {
+      list.tasks.forEach((task) => {
+        if (task.isImportant && !task.done) count++;
+      });
+    });
+    return count || "";
+  }
+  const list = todoData.value.find((item) => item.id === id);
+  return list?.tasks.filter((t) => !t.done).length || "";
+};
+
+// 列表操作
 const selectList = (listId) => {
   selectedListId.value = listId;
 };
 
-const addList = () => {
-  if (!newListTitle.value.trim()) return;
-  const time = Date.now().toString();
+const addList = (title) => {
   todoData.value.push({
-    id: "List" + time,
-    title: newListTitle.value,
+    id: `list_${Date.now()}`,
+    title,
     tasks: [],
   });
-  newListTitle.value = "";
 };
 
-const addTask = () => {
-  if (!newTask.value?.trim()) return;
-  const list = todoData.value.find((l) => l.id === selectedListId.value);
+const deleteList = (id) => {
+  if (!confirm("确定删除该列表吗？")) return;
+  todoData.value = todoData.value.filter((l) => l.id !== id);
+  if (selectedListId.value === id) {
+    selectedListId.value = "today";
+  }
+};
+
+const renameList = (list, newTitle) => {
+  list.title = newTitle;
+};
+
+// 任务操作
+const addTask = (text) => {
+  const list = currentList.value;
   if (!list) return;
 
-  const taskTpl = {
-    id: "task" + Date.now().toString(),
-    text: newTask.value.trim(),
+  const task = {
+    id: `task_${Date.now()}`,
+    text,
     done: false,
-    isImportant: false,
-    dueDate: null,
+    isImportant: selectedListId.value === "import",
+    dueDate:
+      selectedListId.value === "today"
+        ? new Date().toISOString().slice(0, 10)
+        : null,
     listId: list.id,
+    priority: null,
+    tag: null,
   };
-  if (selectedListId.value === "import") {
-    taskTpl.isImportant = true;
-  }
-  if (selectedListId.value === "today") {
-    taskTpl.dueDate = new Date().toISOString().slice(0, 10);
-  }
 
-  list.tasks.push(taskTpl);
-  newTask.value = "";
+  list.tasks.push(task);
 };
 
 const deleteTask = (task) => {
@@ -137,81 +206,16 @@ const deleteTask = (task) => {
   if (idx > -1) list.tasks.splice(idx, 1);
 };
 
-const startEdit = (task) => {
-  editingId.value = task.id;
-  editText.value = task.text;
-  nextTick(() => document.querySelector(".edit-input")?.focus());
+const toggleSidebar = () => {
+  showLeft.value = !showLeft.value;
 };
 
-const saveEdit = (task) => {
-  if (editText.value.trim()) task.text = editText.value.trim();
-  editingId.value = null;
-};
-
-const cancelEdit = () => {
-  editingId.value = null;
-};
-
-const searchResults = computed(() => {
-  if (!keyword.value.trim()) return [];
-  const kw = keyword.value.trim().toLowerCase();
-  const res = [];
-  todoData.value.forEach((list) =>
-    list.tasks.forEach((t) => {
-      if (t.text.toLowerCase().includes(kw)) {
-        t.listTitle = list.title;
-        res.push(t);
-      }
-    })
-  );
-  return res;
-});
-
-const openCtxMenu = (e, list) => {
-  e.stopPropagation();
-  ctxMenuList.value = list;
-  ctxX.value = e.clientX;
-  ctxY.value = e.clientY;
-  ctxMenuShow.value = true;
-};
-
-const startRename = (list) => {
-  ctxMenuShow.value = false;
-  renameId.value = list.id;
-  renameText.value = list.title;
-  nextTick(() => document.querySelector(".rename-input")?.focus());
-};
-
-const saveRename = (list) => {
-  if (renameText.value.trim()) list.title = renameText.value.trim();
-  renameId.value = null;
-};
-
-const deleteList = (id) => {
-  ctxMenuShow.value = false;
-  if (!confirm("确定删除该列表吗？")) return;
-  todoData.value = todoData.value.filter((l) => l.id !== id);
-  if (selectedListId.value === id) selectedListId.value = "today";
-};
-
-const LAST_VISIT_KEY = "lastVisitDate";
-
-function shouldResetToday() {
-  const last = localStorage.getItem(LAST_VISIT_KEY);
-  if (!last) return true;
-
-  const lastDate = new Date(last);
-  const today = new Date();
-
-  return (
-    lastDate.getFullYear() !== today.getFullYear() ||
-    lastDate.getMonth() !== today.getMonth() ||
-    lastDate.getDate() !== today.getDate()
-  );
-}
-
+// 今日列表重置逻辑
 function resetTodayIfNeeded() {
-  if (shouldResetToday()) {
+  const lastVisit = localStorage.getItem(LAST_VISIT_KEY);
+  const today = new Date().toDateString();
+
+  if (!lastVisit || new Date(lastVisit).toDateString() !== today) {
     const todayList = todoData.value.find((l) => l.id === "today");
     if (todayList) {
       todayList.tasks = [];
@@ -222,326 +226,35 @@ function resetTodayIfNeeded() {
 </script>
 
 <template>
-  <div class="todolist" @click="ctxMenuShow = false" @contextmenu.prevent>
-    <div
-      class="Left-open"
-      v-show="showLeft"
-      @click="showLeft = !showLeft"
-    ></div>
+  <div class="todolist">
+    <div class="Left-open" v-show="showLeft" @click="toggleSidebar"></div>
     <div class="Left" v-show="showLeft">
-      <div class="Left-body">
-        <div class="Left-header">
-          <svg
-            @click="showLeft = !showLeft"
-            t="1764658081387"
-            class="Left-icon"
-            viewBox="0 0 1024 1024"
-            version="1.1"
-            xmlns="http://www.w3.org/2000/svg"
-            p-id="4725"
-            width="20"
-            height="20"
-          >
-            <path
-              d="M66.488889 211.781818h891.022222c28.198788 0 50.980202-22.238384 50.980202-49.648485 0-27.397172-22.768485-49.648485-50.980202-49.648485H66.488889C38.341818 112.484848 15.508687 134.723232 15.508687 162.133333s22.833131 49.648485 50.980202 49.648485z m891.009293 248.242424H66.488889C38.277172 460.024242 15.508687 482.262626 15.508687 509.672727s22.768485 49.648485 50.980202 49.648485h891.022222c28.198788 0 50.980202-22.238384 50.980202-49.648485-0.012929-27.410101-22.923636-49.648485-50.993131-49.648485z m0 351.63798H66.488889c-28.134141 0-50.980202 22.238384-50.980202 49.648485s22.833131 49.648485 50.980202 49.648485h891.022222c28.198788 0 50.980202-22.238384 50.980202-49.648485-0.012929-27.397172-22.781414-49.648485-50.993131-49.648485z m0 0"
-              p-id="4726"
-            ></path>
-          </svg>
-        </div>
-        <div class="Left-content">
-          <div class="Left-search">
-            <svg
-              t="1764660333997"
-              class="icon"
-              viewBox="0 0 1024 1024"
-              version="1.1"
-              xmlns="http://www.w3.org/2000/svg"
-              p-id="12429"
-              width="20"
-              height="18"
-            >
-              <path
-                d="M499.4 837.2c-207.7 0-376.7-169-376.7-376.7s169-376.7 376.7-376.7 376.7 169 376.7 376.7c0 95.5-35.8 186.6-100.8 256.5-71.1 76.3-171.6 120.2-275.9 120.2z m0-690.1C326.6 147.1 186 287.7 186 460.5s140.6 313.4 313.4 313.4c86.7 0 170.4-36.5 229.5-100 54.1-58.2 83.8-133.9 83.8-213.3 0.1-172.9-140.5-313.5-313.3-313.5z"
-                fill="#666666"
-                p-id="12430"
-              ></path>
-              <path
-                d="M891.4 916.5c-8.4 0-16.8-3.3-23.1-10L719 747.9c-12-12.7-11.4-32.8 1.3-44.8 12.8-12 32.8-11.4 44.8 1.3l149.4 158.7c12 12.7 11.4 32.8-1.3 44.8-6.2 5.7-14 8.6-21.8 8.6z"
-                fill="#666666"
-                p-id="12431"
-              ></path>
-            </svg>
-            <input
-              class="search"
-              type="text"
-              placeholder="搜索"
-              v-model="keyword"
-            />
-          </div>
-          <div
-            class="Left-listinner"
-            @click="selectList('today')"
-            :class="{ 'Selected-list': selectedListId === 'today' }"
-          >
-            <svg
-              class="icon"
-              aria-label=""
-              fill="currentColor"
-              aria-hidden="true"
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              xmlns="http://www.w3.org/2000/svg"
-              focusable="false"
-            >
-              <path
-                d="M10 2c.28 0 .5.22.5.5v1a.5.5 0 01-1 0v-1c0-.28.22-.5.5-.5zm0 12a4 4 0 100-8 4 4 0 000 8zm0-1a3 3 0 110-6 3 3 0 010 6zm7.5-2.5a.5.5 0 000-1h-1a.5.5 0 000 1h1zM10 16c.28 0 .5.22.5.5v1a.5.5 0 01-1 0v-1c0-.28.22-.5.5-.5zm-6.5-5.5a.5.5 0 000-1H2.46a.5.5 0 000 1H3.5zm.65-6.35c.2-.2.5-.2.7 0l1 1a.5.5 0 11-.7.7l-1-1a.5.5 0 010-.7zm.7 11.7a.5.5 0 01-.7-.7l1-1a.5.5 0 01.7.7l-1 1zm11-11.7a.5.5 0 00-.7 0l-1 1a.5.5 0 00.7.7l1-1a.5.5 0 000-.7zm-.7 11.7a.5.5 0 00.7-.7l-1-1a.5.5 0 00-.7.7l1 1z"
-                fill="currentColor"
-              ></path>
-            </svg>
-            <span>今天</span>
-            <div class="list-count">{{ getCount("today") }}</div>
-          </div>
-          <div
-            class="Left-listinner"
-            @click="selectList('import')"
-            :class="{ 'Selected-list': selectedListId === 'import' }"
-          >
-            <svg
-              class="icon"
-              aria-label=""
-              fill="currentColor"
-              aria-hidden="true"
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              xmlns="http://www.w3.org/2000/svg"
-              focusable="false"
-            >
-              <path
-                d="M9.1 2.9a1 1 0 011.8 0l1.93 3.91 4.31.63a1 1 0 01.56 1.7l-3.12 3.05.73 4.3a1 1 0 01-1.45 1.05L10 15.51l-3.86 2.03a1 1 0 01-1.45-1.05l.74-4.3L2.3 9.14a1 1 0 01.56-1.7l4.31-.63L9.1 2.9zm.9.44L8.07 7.25a1 1 0 01-.75.55L3 8.43l3.12 3.04a1 1 0 01.3.89l-.75 4.3 3.87-2.03a1 1 0 01.93 0l3.86 2.03-.74-4.3a1 1 0 01.29-.89L17 8.43l-4.32-.63a1 1 0 01-.75-.55L10 3.35z"
-                fill="currentColor"
-              ></path>
-            </svg>
-            <span>重要</span>
-            <div class="list-count">{{ getCount("import") }}</div>
-          </div>
-          <div class="partition"></div>
-          <div class="Left-List">
-            <div
-              class="Left-List-box"
-              v-for="value in todoData.filter(
-                (l) => !['today', 'import', 'tasks'].includes(l.id)
-              )"
-              :key="value.id"
-              @click="selectList(value.id, value.title)"
-              @contextmenu.prevent="openCtxMenu($event, value)"
-              :class="{ 'Selected-list': selectedListId === value.id }"
-            >
-              <svg
-                class="icon"
-                aria-label=""
-                fill="currentColor"
-                aria-hidden="true"
-                width="20"
-                height="20"
-                viewBox="0 0 20 20"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M3 6.5a1 1 0 100-2 1 1 0 000 2zm3-1c0-.28.22-.5.5-.5h11a.5.5 0 010 1h-11a.5.5 0 01-.5-.5zm0 5c0-.28.22-.5.5-.5h11a.5.5 0 010 1h-11a.5.5 0 01-.5-.5zm.5 4.5a.5.5 0 000 1h11a.5.5 0 000-1h-11zm-2.5.5a1 1 0 11-2 0 1 1 0 012 0zm-1-4a1 1 0 100-2 1 1 0 000 2z"
-                  fill="currentColor"
-                ></path>
-              </svg>
-              <span v-if="renameId !== value.id">{{ value.title }}</span>
-              <input
-                v-else
-                class="rename-input"
-                v-model="renameText"
-                @keydown.enter="saveRename(value)"
-                @blur="saveRename(value)"
-                @keydown.esc="renameId = null"
-              />
-              <div class="list-count">
-                {{ getCount(value.id) }}
-              </div>
-            </div>
-          </div>
-          <div class="Left-AddList">
-            <svg
-              class="icon"
-              aria-label=""
-              fill="currentColor"
-              aria-hidden="true"
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M10 2.5a.5.5 0 00-1 0V9H2.5a.5.5 0 000 1H9v6.5a.5.5 0 001 0V10h6.5a.5.5 0 000-1H10V2.5z"
-                fill="currentColor"
-              ></path>
-            </svg>
-            <input
-              type="text"
-              placeholder="添加列表"
-              v-model="newListTitle"
-              @keydown.enter="addList"
-              maxlength="60"
-            />
-          </div>
-        </div>
-      </div>
+      <Sidebar
+        :selectedListId="selectedListId"
+        :customLists="customLists"
+        :keyword="keyword"
+        :getCount="getCount"
+        @update:keyword="keyword = $event"
+        @selectList="selectList"
+        @addList="addList"
+        @deleteList="deleteList"
+        @renameList="renameList"
+        @toggleSidebar="toggleSidebar"
+      />
     </div>
-    <div class="center">
-      <div class="center-header">
-        <svg
-          @click="showLeft = !showLeft"
-          t="1764658081387"
-          class="more-icon"
-          viewBox="0 0 1024 1024"
-          version="1.1"
-          xmlns="http://www.w3.org/2000/svg"
-          p-id="4725"
-          width="20"
-          height="20"
-        >
-          <path
-            d="M66.488889 211.781818h891.022222c28.198788 0 50.980202-22.238384 50.980202-49.648485 0-27.397172-22.768485-49.648485-50.980202-49.648485H66.488889C38.341818 112.484848 15.508687 134.723232 15.508687 162.133333s22.833131 49.648485 50.980202 49.648485z m891.009293 248.242424H66.488889C38.277172 460.024242 15.508687 482.262626 15.508687 509.672727s22.768485 49.648485 50.980202 49.648485h891.022222c28.198788 0 50.980202-22.238384 50.980202-49.648485-0.012929-27.410101-22.923636-49.648485-50.993131-49.648485z m0 351.63798H66.488889c-28.134141 0-50.980202 22.238384-50.980202 49.648485s22.833131 49.648485 50.980202 49.648485h891.022222c28.198788 0 50.980202-22.238384 50.980202-49.648485-0.012929-27.397172-22.781414-49.648485-50.993131-49.648485z m0 0"
-            p-id="4726"
-          ></path>
-        </svg>
-        <div class="title">
-          {{ searchResults.length ? "搜索结果" : currentListName }}
-        </div>
-      </div>
-      <div class="center-content">
-        <div class="addTask">
-          <svg
-            class="icon"
-            aria-label=""
-            fill="currentColor"
-            aria-hidden="true"
-            width="20"
-            height="20"
-            viewBox="0 0 20 20"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M10 2.5a.5.5 0 00-1 0V9H2.5a.5.5 0 000 1H9v6.5a.5.5 0 001 0V10h6.5a.5.5 0 000-1H10V2.5z"
-              fill="currentColor"
-            ></path>
-          </svg>
-          <input
-            type="text"
-            placeholder="添加任务"
-            v-model="newTask"
-            @keydown.enter="addTask"
-          />
-        </div>
-        <div class="center-select-show">
-          <div
-            class="all-task"
-            :class="{ active: filterKey === 'all' }"
-            @click="filterKey = 'all'"
-          >
-            全部
-          </div>
-          <div
-            class="no-done-task"
-            :class="{ active: filterKey === 'undone' }"
-            @click="filterKey = 'undone'"
-          >
-            未完成
-          </div>
-          <div
-            class="done-task"
-            :class="{ active: filterKey === 'done' }"
-            @click="filterKey = 'done'"
-          >
-            已完成
-          </div>
-        </div>
-        <div class="search-results" v-if="searchResults.length">
-          <div class="task-item" v-for="t in searchResults" :key="t.id">
-            <input type="checkbox" v-model="t.done" />
-            <div class="search1">
-              <span :class="{ done: t.done }">{{ t.text }}</span>
-              <span class="list-tag">{{ t.listTitle }}</span>
-            </div>
-            <span class="delect" @click="deleteTask(t)">
-              <svg
-                t="1764770107982"
-                class="icon"
-                viewBox="0 0 1024 1024"
-                version="1.1"
-                xmlns="http://www.w3.org/2000/svg"
-                p-id="6128"
-                width="20"
-                height="20"
-              >
-                <path
-                  d="M254.398526 804.702412l-0.030699-4.787026C254.367827 801.546535 254.380106 803.13573 254.398526 804.702412zM614.190939 259.036661c-22.116717 0-40.047088 17.910928-40.047088 40.047088l0.37146 502.160911c0 22.097274 17.930371 40.048111 40.047088 40.048111s40.048111-17.950837 40.048111-40.048111l-0.350994-502.160911C654.259516 276.948613 636.328122 259.036661 614.190939 259.036661zM893.234259 140.105968l-318.891887 0.148379-0.178055-41.407062c0-22.13616-17.933441-40.048111-40.067554-40.048111-7.294127 0-14.126742 1.958608-20.017916 5.364171-5.894244-3.405563-12.729929-5.364171-20.031219-5.364171-22.115694 0-40.047088 17.911952-40.047088 40.048111l0.188288 41.463344-230.115981 0.106424c-3.228531-0.839111-6.613628-1.287319-10.104125-1.287319-3.502777 0-6.89913 0.452301-10.136871 1.296529l-73.067132 0.033769c-22.115694 0-40.048111 17.950837-40.048111 40.047088 0 22.13616 17.931395 40.048111 40.048111 40.048111l43.176358-0.020466 0.292666 617.902982 0.059352 0 0 42.551118c0 44.233434 35.862789 80.095199 80.095199 80.095199l40.048111 0 0 0.302899 440.523085-0.25685 0-0.046049 40.048111 0c43.663452 0 79.146595-34.95 80.054267-78.395488l-0.329505-583.369468c0-22.135136-17.930371-40.047088-40.048111-40.047088-22.115694 0-40.047088 17.911952-40.047088 40.047088l0.287549 509.324054c-1.407046 60.314691-18.594497 71.367421-79.993892 71.367421l41.575908 1.022283-454.442096 0.26606 52.398394-1.288343c-62.715367 0-79.305207-11.522428-80.0645-75.308173l0.493234 76.611865-0.543376 0-0.313132-660.818397 236.82273-0.109494c1.173732 0.103354 2.360767 0.166799 3.561106 0.166799 1.215688 0 2.416026-0.063445 3.604084-0.169869l32.639375-0.01535c1.25355 0.118704 2.521426 0.185218 3.805676 0.185218 1.299599 0 2.582825-0.067538 3.851725-0.188288l354.913289-0.163729c22.115694 0 40.050158-17.911952 40.050158-40.047088C933.283394 158.01792 915.349953 140.105968 893.234259 140.105968zM774.928806 815.294654l0.036839 65.715701-0.459464 0L774.928806 815.294654zM413.953452 259.036661c-22.116717 0-40.048111 17.910928-40.048111 40.047088l0.37146 502.160911c0 22.097274 17.931395 40.048111 40.049135 40.048111 22.115694 0 40.047088-17.950837 40.047088-40.048111l-0.37146-502.160911C454.00054 276.948613 436.069145 259.036661 413.953452 259.036661z"
-                  fill="#272636"
-                  p-id="6129"
-                ></path>
-              </svg>
-            </span>
-          </div>
-        </div>
-        <div class="task" v-else>
-          <div class="task-item" v-for="task in filteredTasks" :key="task.id">
-            <input type="checkbox" v-model="task.done" />
-            <span
-              v-if="editingId !== task.id"
-              :class="{ done: task.done }"
-              @dblclick="startEdit(task)"
-            >
-              {{ task.text }}
-            </span>
-            <input
-              v-else
-              class="edit-input"
-              v-model="editText"
-              @keydown.enter="saveEdit(task)"
-              @blur="saveEdit(task)"
-              @keydown.esc="cancelEdit"
-            />
-            <span class="delect" @click="deleteTask(task)">
-              <svg
-                t="1764770107982"
-                class="icon"
-                viewBox="0 0 1024 1024"
-                version="1.1"
-                xmlns="http://www.w3.org/2000/svg"
-                p-id="6128"
-                width="20"
-                height="20"
-              >
-                <path
-                  d="M254.398526 804.702412l-0.030699-4.787026C254.367827 801.546535 254.380106 803.13573 254.398526 804.702412zM614.190939 259.036661c-22.116717 0-40.047088 17.910928-40.047088 40.047088l0.37146 502.160911c0 22.097274 17.930371 40.048111 40.047088 40.048111s40.048111-17.950837 40.048111-40.048111l-0.350994-502.160911C654.259516 276.948613 636.328122 259.036661 614.190939 259.036661zM893.234259 140.105968l-318.891887 0.148379-0.178055-41.407062c0-22.13616-17.933441-40.048111-40.067554-40.048111-7.294127 0-14.126742 1.958608-20.017916 5.364171-5.894244-3.405563-12.729929-5.364171-20.031219-5.364171-22.115694 0-40.047088 17.911952-40.047088 40.048111l0.188288 41.463344-230.115981 0.106424c-3.228531-0.839111-6.613628-1.287319-10.104125-1.287319-3.502777 0-6.89913 0.452301-10.136871 1.296529l-73.067132 0.033769c-22.115694 0-40.048111 17.950837-40.048111 40.047088 0 22.13616 17.931395 40.048111 40.048111 40.048111l43.176358-0.020466 0.292666 617.902982 0.059352 0 0 42.551118c0 44.233434 35.862789 80.095199 80.095199 80.095199l40.048111 0 0 0.302899 440.523085-0.25685 0-0.046049 40.048111 0c43.663452 0 79.146595-34.95 80.054267-78.395488l-0.329505-583.369468c0-22.135136-17.930371-40.047088-40.048111-40.047088-22.115694 0-40.047088 17.911952-40.047088 40.047088l0.287549 509.324054c-1.407046 60.314691-18.594497 71.367421-79.993892 71.367421l41.575908 1.022283-454.442096 0.26606 52.398394-1.288343c-62.715367 0-79.305207-11.522428-80.0645-75.308173l0.493234 76.611865-0.543376 0-0.313132-660.818397 236.82273-0.109494c1.173732 0.103354 2.360767 0.166799 3.561106 0.166799 1.215688 0 2.416026-0.063445 3.604084-0.169869l32.639375-0.01535c1.25355 0.118704 2.521426 0.185218 3.805676 0.185218 1.299599 0 2.582825-0.067538 3.851725-0.188288l354.913289-0.163729c22.115694 0 40.050158-17.911952 40.050158-40.047088C933.283394 158.01792 915.349953 140.105968 893.234259 140.105968zM774.928806 815.294654l0.036839 65.715701-0.459464 0L774.928806 815.294654zM413.953452 259.036661c-22.116717 0-40.048111 17.910928-40.048111 40.047088l0.37146 502.160911c0 22.097274 17.931395 40.048111 40.049135 40.048111 22.115694 0 40.047088-17.950837 40.047088-40.048111l-0.37146-502.160911C454.00054 276.948613 436.069145 259.036661 413.953452 259.036661z"
-                  fill="#272636"
-                  p-id="6129"
-                ></path>
-              </svg>
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <TaskList
+      :title="currentListName"
+      :tasks="filteredTasks"
+      :searchResults="searchResults"
+      :filterKey="filterKey"
+      :sortKey="sortKey"
+      @update:filterKey="filterKey = $event"
+      @update:sortKey="sortKey = $event"
+      @addTask="addTask"
+      @deleteTask="deleteTask"
+      @toggleSidebar="toggleSidebar"
+    />
   </div>
-  <Teleport to="body">
-    <div
-      v-if="ctxMenuShow"
-      class="ctx-menu"
-      :style="{ left: ctxX + 'px', top: ctxY + 'px' }"
-      @click.stop
-    >
-      <div @click="startRename(ctxMenuList)">重命名</div>
-      <div @click="deleteList(ctxMenuList.id)">删除</div>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>
@@ -558,7 +271,6 @@ function resetTodayIfNeeded() {
   background-color: #f8f8f8;
 }
 
-/* 左边区域 */
 .Left {
   width: 290px;
   min-width: 290px;
@@ -573,294 +285,6 @@ function resetTodayIfNeeded() {
   height: 100%;
   z-index: 100;
   margin-left: auto;
-}
-
-.Left-body {
-  height: 100%;
-  margin: 0px 10px;
-}
-
-.Left-icon {
-  margin: 28px 0px 0px 10px;
-}
-
-.Left-content {
-  display: flex;
-  flex-direction: column;
-  margin-top: 20px;
-}
-
-.Left-List {
-  max-height: 58vh;
-  overflow-y: auto;
-}
-
-.Left-listinner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px;
-}
-
-.Left-search {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px;
-  color: rgb(100, 100, 241);
-}
-
-.search {
-  width: 100%;
-  outline: none;
-  border: none;
-  font-size: 16px;
-}
-
-.search::placeholder {
-  color: rgb(100, 100, 241);
-}
-
-.search:focus::placeholder {
-  color: #b6b4b4;
-}
-
-.Left-Listitem {
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.267);
-}
-
-.Left-List-body {
-  margin-top: 15px;
-  list-style: none;
-  overflow-y: auto;
-}
-
-.Left-List-box {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  padding: 10px;
-  gap: 12px;
-}
-
-.Left-List-box span {
-  width: 75%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.list-count {
-  margin-left: auto;
-}
-
-.Left-AddList {
-  display: flex;
-  align-items: center;
-  padding: 10px;
-  gap: 12px;
-  color: rgb(100, 100, 241);
-}
-
-.Left-AddList input {
-  width: 100%;
-  border: none;
-  outline: none;
-  font-size: 16px;
-}
-
-.Left-AddList input::placeholder {
-  color: rgb(100, 100, 241);
-}
-
-.Left-AddList input:focus::placeholder {
-  color: #b6b4b4;
-}
-
-/* 选择列表样式 */
-.Left-listinner.Selected-list,
-.Left-List-box.Selected-list {
-  background-color: #eff6fc;
-  padding-left: 7px !important;
-  border-left: 3px solid rgb(100, 100, 241);
-}
-
-/* 中间内容区域 */
-.center {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.center-header {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  padding: 20px;
-  padding-top: 25px;
-  font-size: 20px;
-  align-items: center;
-}
-
-.title {
-  max-width: 80%;
-  display: inline;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.addTask {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 98%;
-  padding: 0px 15px;
-  margin: 0 auto;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-  color: rgb(100, 100, 241);
-  border-radius: 12px;
-}
-
-.addTask input {
-  width: 100%;
-  height: 8px;
-  padding: 30px 0px;
-  border: none;
-  outline: none;
-  background-color: #f8f8f8;
-  font-size: 16px;
-}
-
-.addTask input::placeholder {
-  color: rgb(100, 100, 241);
-}
-
-.addTask input:focus::placeholder {
-  color: #b6b4b4;
-}
-
-.center-select-show {
-  display: flex;
-  padding: 20px 20px 20px 15px;
-  gap: 10px;
-}
-
-.no-done {
-  font-size: 16px;
-  margin-left: auto;
-  flex: 0 0 100px;
-  text-align: right;
-}
-
-.done-task,
-.no-done,
-.no-done-task,
-.all-task {
-  padding: 10px;
-}
-
-.more-icon {
-  flex: 0 0 auto;
-}
-
-.done-task:hover,
-.no-done-task:hover,
-.all-task:hover {
-  background-color: #73a8f850;
-  border-radius: 5px;
-}
-
-.active {
-  background-color: #73a8f850;
-  border-radius: 5px;
-}
-
-.select-Task-show {
-  background-color: #73a8f850;
-  border-radius: 5px;
-}
-
-.center-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  margin-bottom: 30px;
-}
-
-.task {
-  flex: 1;
-  margin: 0px 10px;
-  overflow-y: auto;
-}
-
-.task-item {
-  align-items: center;
-  justify-content: center;
-  padding: 20px 20px 20px 20px;
-  display: flex;
-  gap: 10px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.267);
-}
-
-.task-item span {
-  flex-wrap: wrap;
-  word-break: break-all;
-}
-
-.delect {
-  margin-left: auto;
-}
-
-.partition {
-  border: 1px solid rgba(0, 0, 0, 0.267);
-  margin: 10px 0px;
-}
-
-.done {
-  text-decoration: line-through;
-  color: #999;
-}
-
-.edit-input {
-  border: none;
-  outline: none;
-  font-size: 16px;
-  background-color: #f8f8f8;
-}
-
-.list-tag {
-  font-size: 12px;
-  color: #999;
-}
-
-.search1 {
-  display: flex;
-  flex-direction: column;
-}
-
-.ctx-menu {
-  position: fixed;
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-  font-size: 14px;
-  z-index: 9999;
-}
-.ctx-menu div {
-  padding: 10px 15px;
-  cursor: pointer;
-}
-.ctx-menu div:hover {
-  background: #f5f5f5;
-}
-
-.rename-input {
-  outline: none;
-  border: none;
-  font-size: 16px;
 }
 
 @media (max-width: 435px) {
@@ -884,10 +308,6 @@ function resetTodayIfNeeded() {
     top: 0;
     position: absolute;
     background-color: rgba(222, 224, 224, 0.534);
-  }
-
-  .center {
-    width: 100%;
   }
 }
 </style>
